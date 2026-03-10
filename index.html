@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DataMatrix Generator</title>
+<title>Barcode Generator</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -29,6 +29,16 @@
     width: 100%;
     max-width: 500px;
     margin-bottom: 1.5rem;
+  }
+
+  .input-area select {
+    padding: 0.6rem 0.5rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    outline: none;
+    background: #fff;
+    cursor: pointer;
   }
 
   .input-area input {
@@ -141,6 +151,16 @@
     flex: 1;
   }
 
+  .history-type {
+    font-size: 0.7rem;
+    color: #fff;
+    background: #6b7280;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    margin-right: 0.5rem;
+    white-space: nowrap;
+  }
+
   .history-time { font-size: 0.75rem; color: #888; white-space: nowrap; }
 
   .empty-history { color: #999; font-size: 0.9rem; text-align: center; }
@@ -148,9 +168,13 @@
 </head>
 <body>
 
-<h1>DataMatrix Generator</h1>
+<h1>Barcode Generator</h1>
 
 <div class="input-area">
+  <select id="typeSelect">
+    <option value="datamatrix">DataMatrix</option>
+    <option value="code128">CODE128</option>
+  </select>
   <input type="text" id="textInput" placeholder="Enter text to encode..." autofocus>
   <button id="generateBtn">Generate</button>
 </div>
@@ -173,7 +197,8 @@
 <script src="https://cdn.jsdelivr.net/npm/bwip-js/dist/bwip-js-min.js"></script>
 <script>
 (function () {
-  const STORAGE_KEY = 'datamatrix_history';
+  const STORAGE_KEY = 'barcode_history';
+  const typeSelect = document.getElementById('typeSelect');
   const textInput = document.getElementById('textInput');
   const generateBtn = document.getElementById('generateBtn');
   const canvas = document.getElementById('dmCanvas');
@@ -184,6 +209,7 @@
   const clearBtn = document.getElementById('clearBtn');
 
   let currentText = '';
+  let currentType = 'datamatrix';
 
   function loadHistory() {
     try {
@@ -197,11 +223,11 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
   }
 
-  function addToHistory(text) {
+  function addToHistory(text, type) {
     const history = loadHistory();
-    // Remove duplicate if exists
-    const filtered = history.filter(h => h.text !== text);
-    filtered.unshift({ text, timestamp: new Date().toISOString() });
+    // Remove duplicate if exists (same text + type)
+    const filtered = history.filter(h => !(h.text === text && h.type === type));
+    filtered.unshift({ text, type, timestamp: new Date().toISOString() });
     // Keep max 50 entries
     if (filtered.length > 50) filtered.length = 50;
     saveHistory(filtered);
@@ -220,6 +246,10 @@
     history.forEach(entry => {
       const li = document.createElement('li');
 
+      const typeSpan = document.createElement('span');
+      typeSpan.className = 'history-type';
+      typeSpan.textContent = (entry.type || 'datamatrix') === 'datamatrix' ? 'DM' : 'C128';
+
       const textSpan = document.createElement('span');
       textSpan.className = 'history-text';
       textSpan.textContent = entry.text;
@@ -229,12 +259,14 @@
       const d = new Date(entry.timestamp);
       timeSpan.textContent = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+      li.appendChild(typeSpan);
       li.appendChild(textSpan);
       li.appendChild(timeSpan);
 
       li.addEventListener('click', () => {
+        typeSelect.value = entry.type || 'datamatrix';
         textInput.value = entry.text;
-        generate(entry.text);
+        generate(entry.text, entry.type || 'datamatrix');
       });
 
       historyList.appendChild(li);
@@ -250,26 +282,27 @@
     errorMsg.style.display = 'none';
   }
 
-  function generate(text) {
+  function generate(text, type) {
     hideError();
     text = text.trim();
+    type = type || typeSelect.value;
     if (!text) {
       showError('Please enter some text to encode.');
       return;
     }
 
+    const opts = type === 'code128'
+      ? { bcid: 'code128', text, scale: 3, height: 15, includetext: true, textxalign: 'center', padding: 4 }
+      : { bcid: 'datamatrix', text, scale: 4, padding: 4 };
+
     try {
-      bwipjs.toCanvas(canvas, {
-        bcid: 'datamatrix',
-        text: text,
-        scale: 4,
-        padding: 4,
-      });
+      bwipjs.toCanvas(canvas, opts);
       currentText = text;
+      currentType = type;
       canvasWrapper.classList.remove('empty');
-      addToHistory(text);
+      addToHistory(text, type);
     } catch (e) {
-      showError('Failed to generate DataMatrix: ' + e.message);
+      showError('Failed to generate barcode: ' + e.message);
       canvasWrapper.classList.add('empty');
     }
   }
@@ -283,7 +316,7 @@
   downloadBtn.addEventListener('click', () => {
     if (!currentText) return;
     const link = document.createElement('a');
-    link.download = 'datamatrix.png';
+    link.download = currentType + '.png';
     link.href = canvas.toDataURL('image/png');
     link.click();
   });
